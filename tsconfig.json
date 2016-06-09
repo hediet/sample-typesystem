@@ -7,7 +7,8 @@
 		"jsx": "react"
     },
 	"files": [
-		"src/app.tsx",
+    "src/app.tsx",
+    "src/types.ts",
 		"typings/index.d.ts"
 	]
 }
