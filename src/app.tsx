@@ -11,11 +11,11 @@ const str = new DistinctType("string", 0, []);
 const int = new DistinctType("int", 0, []);
 
 const enumerable = new DistinctType("enumerable", 1, [object.close()]);
-const collection = new DistinctType("collection", 1, [enumerable.close(v(1))]);
-const list = new DistinctType("list", 1, [collection.close(v(1))]);
+const collection = new DistinctType("collection", 1, [enumerable.close(v(0))]);
+const list = new DistinctType("list", 1, [collection.close(v(0))]);
 
 const pair = new DistinctType("pair", 2, [object.close()]);
-const dictionary = new DistinctType("dictionary", 2, [enumerable.close(pair.close(v(1), v(1)))]);
+const dictionary = new DistinctType("dictionary", 2, [enumerable.close(pair.close(v(0), v(1)))]);
 
 
 
@@ -28,10 +28,10 @@ console.log(r2.toString());
 
 
 const valueProvider = new DistinctType("ValueProvider", 1, [object.close()]);
-const dynamic = new AliasType("Dynamic", 1, new UnionType(v(1), valueProvider.close(v(1))));
+const dynamic = new AliasType("Dynamic", 1, new UnionType(v(0), valueProvider.close(v(0))));
 const nul = new DistinctType("Null", 0, []);
-const nullable = new AliasType("Nullable", 1, new UnionType(nul.close(), v(1)));
-const func = new DistinctType("Func", 1, [valueProvider.close(v(1))]);
+const nullable = new AliasType("Nullable", 1, new UnionType(nul.close(), v(0)));
+const func = new DistinctType("Func", 1, [valueProvider.close(v(0))]);
 
 const r3 = func.closeWithInferredArgs(dynamic.close(nullable.close(str.close())));
 console.log(r3.toString());
