@@ -1,21 +1,24 @@
-import { DistinctType, TypeArgument, Type, DistinctTypeInstantiation, AliasType, UnionType } from "./types.ts";
+import { TypeDefinition, TypeArgument, Type, TypeInstantiation, AliasDefinition, UnionType } from "./types.ts";
 
 const v = (id: number) => new TypeArgument(id);
 
 
-const object = new DistinctType("object", 0, []);
+const anyType = new TypeDefinition("Any", 0, []).close();
 
-const bucket = new DistinctType("bucket", 1, [object.close()]);
 
-const str = new DistinctType("string", 0, []);
-const int = new DistinctType("int", 0, []);
+const object = new TypeDefinition("object", 0, [anyType]);
 
-const enumerable = new DistinctType("enumerable", 1, [object.close()]);
-const collection = new DistinctType("collection", 1, [enumerable.close(v(0))]);
-const list = new DistinctType("list", 1, [collection.close(v(0))]);
+const bucket = new TypeDefinition("bucket", 1, [object.close()]);
 
-const pair = new DistinctType("pair", 2, [object.close()]);
-const dictionary = new DistinctType("dictionary", 2, [enumerable.close(pair.close(v(0), v(1)))]);
+const str = new TypeDefinition("string", 0, [anyType]);
+const int = new TypeDefinition("int", 0, [anyType]);
+
+const enumerable = new TypeDefinition("enumerable", 1, [object.close()]);
+const collection = new TypeDefinition("collection", 1, [enumerable.close(v(0))]);
+const list = new TypeDefinition("list", 1, [collection.close(v(0))]);
+
+const pair = new TypeDefinition("pair", 2, [object.close()]);
+const dictionary = new TypeDefinition("dictionary", 2, [enumerable.close(pair.close(v(0), v(1)))]);
 
 
 
@@ -27,11 +30,11 @@ const r2 = dictionary.closeWithInferredArgs(enumerable.close(pair.close(int.clos
 console.log(r2.toString());
 
 
-const valueProvider = new DistinctType("ValueProvider", 1, [object.close()]);
-const dynamic = new AliasType("Dynamic", 1, new UnionType(v(0), valueProvider.close(v(0))));
-const nul = new DistinctType("Null", 0, []);
-const nullable = new AliasType("Nullable", 1, new UnionType(nul.close(), v(0)));
-const func = new DistinctType("Func", 1, [valueProvider.close(v(0))]);
+const valueProvider = new TypeDefinition("ValueProvider", 1, [object.close()]);
+const dynamic = new AliasDefinition("Dynamic", 1, new UnionType(v(0), valueProvider.close(v(0))));
+const nul = new TypeDefinition("Null", 0, []);
+const nullable = new AliasDefinition("Nullable", 1, new UnionType(nul.close(), v(0)));
+const func = new TypeDefinition("Func", 1, [valueProvider.close(v(0))]);
 
 const r3 = func.closeWithInferredArgs(dynamic.close(nullable.close(str.close())));
 console.log(r3.toString());
