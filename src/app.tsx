@@ -1,4 +1,4 @@
-import { BaseTypeDefinition, TypeArgument, Type, BaseTypeInstantiation, AliasDefinition, UnionType } from "./types.ts";
+import { BaseTypeDefinition, TypeArgument, Type, BaseType, AliasTypeDefinition, UnionType } from "./types.ts";
 
 const v = (id: number) => new TypeArgument(id);
 
@@ -17,45 +17,27 @@ const enumerable = new BaseTypeDefinition("enumerable", 1, [object.close()]);
 const collection = new BaseTypeDefinition("collection", 1, [enumerable.close(v(0))]);
 const list = new BaseTypeDefinition("list", 1, [collection.close(v(0))]);
 
-const pair = new BaseTypeDefinition("pair", 2, [object.close()]);
-const dictionary = new BaseTypeDefinition("dictionary", 2, [enumerable.close(pair.close(v(0), v(1)))]);
 
+function example1() {
+    const r = list.closeWithInferredArgs(enumerable.close(bucket.close(str.close())));
+    console.log(r.toString());
+}
 
+function example2() {
+    const pair = new BaseTypeDefinition("pair", 2, [object.close()]);
+    const dictionary = new BaseTypeDefinition("dictionary", 2, [enumerable.close(pair.close(v(0), v(1)))]);
 
-const r1 = list.closeWithInferredArgs(enumerable.close(bucket.close(str.close())));
-console.log(r1.toString());
+    const r = dictionary.closeWithInferredArgs(enumerable.close(pair.close(str.close(), int.close())));
+    console.log(r.toString());
+}
 
+function example3() {
+    const valueProvider = new BaseTypeDefinition("ValueProvider", 1, [object.close()]);
+    const dynamic = new AliasTypeDefinition("Dynamic", 1, new UnionType(v(0), valueProvider.close(v(0))));
+    const nul = new BaseTypeDefinition("Null", 0, []);
+    const nullable = new AliasTypeDefinition("Nullable", 1, new UnionType(nul.close(), v(0)));
+    const func = new BaseTypeDefinition("Func", 1, [valueProvider.close(v(0))]);
 
-const r2 = dictionary.closeWithInferredArgs(enumerable.close(pair.close(int.close(), int.close())));
-console.log(r2.toString());
-
-
-const valueProvider = new BaseTypeDefinition("ValueProvider", 1, [object.close()]);
-const dynamic = new AliasDefinition("Dynamic", 1, new UnionType(v(0), valueProvider.close(v(0))));
-const nul = new BaseTypeDefinition("Null", 0, []);
-const nullable = new AliasDefinition("Nullable", 1, new UnionType(nul.close(), v(0)));
-const func = new BaseTypeDefinition("Func", 1, [valueProvider.close(v(0))]);
-
-const r3 = func.closeWithInferredArgs(dynamic.close(nullable.close(str.close())));
-console.log(r3.toString());
-
-
-
-/*
-
-
-False
-True
-F<1>
-Baz<1, ..., 5>
-FT := False|True
-FT2 := F<False>|F<True>
-
-Instance<1, ..., 30> : Baz< F<10>|F<11>, F<20>|F<21>, F<30>|F<31>,   11|20|30|False,   10|21|30|False>
-
-ExpectedType := Baz< FT2, FT2, FT2,   FT, FT >
-
-
-*/
-
-
+    const r = func.closeWithInferredArgs(dynamic.close(nullable.close(str.close())));
+    console.log(r.toString());
+}

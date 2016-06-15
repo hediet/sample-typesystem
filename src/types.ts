@@ -1,11 +1,11 @@
-export class Definition {
+export class TypeDefinition {
     constructor(private name: string, private arity: number) {}
 
     public getArity() { return this.arity; }
     public toString() { return this.name; }
 }
 
-export class BaseTypeDefinition extends Definition {
+export class BaseTypeDefinition extends TypeDefinition {
     constructor(name: string, arity: number, private directlyAssignableTo: Type[]) { 
         super(name, arity);
         if (directlyAssignableTo.some(t => t.getMaxArgPos() >= arity))
@@ -14,7 +14,7 @@ export class BaseTypeDefinition extends Definition {
             throw "cannot be assignable to a union type!";
     }
 
-    public close(...args: Type[]) { return new BaseTypeInstantiation(this, args); }
+    public close(...args: Type[]) { return new BaseType(this, args); }
 
     public getDirectlyAssignableTo(): Type[] { return this.directlyAssignableTo; }
 
@@ -23,7 +23,7 @@ export class BaseTypeDefinition extends Definition {
         for (let i = 0; i < this.getArity(); i++) argVars[i] = new TypeArgument(i);
         const assignableTo = this.close(...argVars).getAssignableTo();
 
-        let given: BaseTypeInstantiation = null, expected: BaseTypeInstantiation = null;
+        let given: BaseType = null, expected: BaseType = null;
 
         for (const curExp of expectedType.normalizeClosed()) {
             const r = assignableTo.filter(t => t.getBaseType() == curExp.getBaseType());
@@ -56,7 +56,7 @@ export class BaseTypeDefinition extends Definition {
             else if (!oldValue.isEquivalentTo(closedType))
                 throw "cannot infer";
         }
-        else if (openType2 instanceof BaseTypeInstantiation) {
+        else if (openType2 instanceof BaseType) {
             const closedTypes = closedType.normalizeClosed();
             if (closedTypes.length != 1) throw "cannot infer";
             const closedType2 = closedTypes[0];
@@ -71,7 +71,7 @@ export class BaseTypeDefinition extends Definition {
     }
 }
 
-export class AliasDefinition extends Definition {
+export class AliasTypeDefinition extends TypeDefinition {
     constructor(name: string, arity: number, private aliasedType: Type) { 
         super(name, arity);
         if (aliasedType.getMaxArgPos() >= arity)
@@ -86,12 +86,12 @@ export abstract class Type {
     public abstract toString(): string;
     public abstract getMaxArgPos(): number;
     public abstract insert(args: Type[]): Type;
-    public abstract normalize(): (BaseTypeInstantiation | TypeArgument)[];
+    public abstract normalize(): (BaseType | TypeArgument)[];
 
     public normalizeClosed() { 
         if (this.normalize().some(n => n instanceof TypeArgument))
             throw "unexpected TypeArgument was found";
-        return this.normalize() as BaseTypeInstantiation[]; 
+        return this.normalize() as BaseType[]; 
     }
 
     public isEquivalentTo(other: Type) {
@@ -105,7 +105,7 @@ export abstract class Type {
     }
 }
 
-export abstract class DefinitionInstantiation<T extends Definition> extends Type {
+export abstract class DefinitionInstantiation<T extends TypeDefinition> extends Type {
     constructor(private type: T, private typeArgs: Type[], 
                 private ctor: new (type: T, args: Type[]) => Type) {
         super();
@@ -127,26 +127,26 @@ export abstract class DefinitionInstantiation<T extends Definition> extends Type
     }
 }
 
-export class BaseTypeInstantiation extends DefinitionInstantiation<BaseTypeDefinition> {
+export class BaseType extends DefinitionInstantiation<BaseTypeDefinition> {
     constructor(type: BaseTypeDefinition, typeArgs: Type[]) { 
-        super(type, typeArgs, BaseTypeInstantiation); 
+        super(type, typeArgs, BaseType); 
     }
 
     public getDirectlyAssignableTo(): Type[] {
         return this.getBaseType().getDirectlyAssignableTo().map(t => t.insert(this.getTypeArgs()));
     }
 
-    public getAssignableTo(): BaseTypeInstantiation[] {
+    public getAssignableTo(): BaseType[] {
         return this.getDirectlyAssignableTo().reduce((prev, cur) => {
             const n = cur.normalizeClosed();
             if (n.length != 1) throw "bug";
             return prev.concat(n[0].getAssignableTo());
-        }, [ this as BaseTypeInstantiation ]);
+        }, [ this as BaseType ]);
     }
 
     public isEquivalentTo(other: Type) {
-        if (other instanceof BaseTypeInstantiation) {
-            let o: BaseTypeInstantiation = other;
+        if (other instanceof BaseType) {
+            let o: BaseType = other;
             return this.getBaseType() == o.getBaseType() &&
                 this.getTypeArgs().every((arg, i) => arg.isEquivalentTo(o.getTypeArgs()[i]));
         }
@@ -156,8 +156,8 @@ export class BaseTypeInstantiation extends DefinitionInstantiation<BaseTypeDefin
     public normalize() { return [ this ]; }
 }
 
-export class AliasInstantiation extends DefinitionInstantiation<AliasDefinition> {
-    constructor(type: AliasDefinition, typeArgs: Type[]) { super(type, typeArgs, AliasInstantiation); }
+export class AliasInstantiation extends DefinitionInstantiation<AliasTypeDefinition> {
+    constructor(type: AliasTypeDefinition, typeArgs: Type[]) { super(type, typeArgs, AliasInstantiation); }
 
     public getAliasedType(): Type {
         return this.getBaseType().getAliasedType().insert(this.getTypeArgs());
