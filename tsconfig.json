@@ -1,14 +1,19 @@
 {
     "compilerOptions": {
-        "module": "system",
+        "module": "commonjs",
         "target": "es5",
         "noImplicitAny": true,
         "sourceMap": true,
-		"jsx": "react"
+		"jsx": "react",
+        "outDir": "dist",
+        "watch": true
     },
 	"files": [
-    "src/app.tsx",
-    "src/types.ts",
+        "src/app.tsx",
+        "src/types.ts",
+        "src/utils.ts",
+        "src/tymlTests.ts",
+        "src/tyml.ts",
 		"typings/index.d.ts"
 	]
 }

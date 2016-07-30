@@ -1,22 +1,21 @@
-import { BaseTypeDefinition, TypeArgument, Type, BaseType, AliasTypeDefinition, UnionType } from "./types.ts";
+import { Variance, BaseTypeDefinition, TypeArgument, Type, BaseType, AliasTypeDefinition, UnionType } from "./types.ts";
 
 const v = (id: number) => new TypeArgument(id);
 
 
-const anyType = new BaseTypeDefinition("Any", 0, []).close();
+const anyType = new BaseTypeDefinition("Any", [], []).close();
 
 
-const object = new BaseTypeDefinition("object", 0, [anyType]);
+const object = new BaseTypeDefinition("object", [], [anyType]);
 
-const bucket = new BaseTypeDefinition("bucket", 1, [object.close()]);
+const bucket = new BaseTypeDefinition("bucket", [Variance.InOut], [object.close()]);
 
-const str = new BaseTypeDefinition("string", 0, [anyType]);
-const int = new BaseTypeDefinition("int", 0, [anyType]);
+const str = new BaseTypeDefinition("string", [], [anyType]);
+const int = new BaseTypeDefinition("int", [], [anyType]);
 
-const enumerable = new BaseTypeDefinition("enumerable", 1, [object.close()]);
-const collection = new BaseTypeDefinition("collection", 1, [enumerable.close(v(0))]);
-const list = new BaseTypeDefinition("list", 1, [collection.close(v(0))]);
-
+const enumerable = new BaseTypeDefinition("enumerable", [Variance.Out], [object.close()]);
+const collection = new BaseTypeDefinition("collection", [Variance.InOut], [enumerable.close(v(0))]);
+const list = new BaseTypeDefinition("list", [Variance.InOut], [collection.close(v(0))]);
 
 function example1() {
     const r = list.closeWithInferredArgs(enumerable.close(bucket.close(str.close())));

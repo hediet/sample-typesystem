@@ -1,82 +1,64 @@
-import { BaseTypeDefinition, TypeArgument, Type, BaseType, AliasTypeDefinition, UnionType } from "./types.ts";
+import { Variance, BaseTypeDefinition, TypeArgument, Type, BaseType, AliasTypeDefinition, UnionType } from "./types";
+import { ImplementationError, AmbiguityError, IncompatibilityError, ArgumentError, single } from "./utils";
 
-
-interface TypeInfo {
-    checkValue(value: string): boolean;
-}
-
-interface PrimitiveOrStringInfoProvider {
-    getTypeInfo(type: BaseType): TypeInfo;
-    getDefaultType(): BaseType;
-}
-
-function inferStringOrPrimitiveType(expectedType: Type, value: string, p: PrimitiveOrStringInfoProvider) {
-
-    const r = expectedType
-                .normalizeClosed()
-                .map(t => ({ type: t, info: p.getTypeInfo(t) }))
-                .filter(i => i.info != null);
-    
-    const accepted = r.filter(i => i.info.checkValue(value));
-    if (accepted.length == 0) return p.getDefaultType();
-    if (accepted.length == 1) return accepted[0].type;
-    
-    throw "cannot infer type";
-}
-
+export type ValuePredicate = (type: BaseType, value: string) => boolean;
 
 export class TymlTypeInference {
 
-    public readonly anyType = new BaseTypeDefinition("any", 0, []).close();
-    public readonly primitiveType = new BaseTypeDefinition("primitive", 0, [this.anyType]).close();
-    public readonly stringType = new BaseTypeDefinition("string", 0, [this.anyType]).close();
-    public readonly objectType = new BaseTypeDefinition("object", 0, [this.anyType]).close();
-    public readonly arrayDef = new BaseTypeDefinition("array", 1, [this.anyType]);
-    public readonly interfaceType = new BaseTypeDefinition("array", 1, [this.anyType]).close();
+    public static anyType = new BaseTypeDefinition("any", [], []).close();
+    public static primitiveType = new BaseTypeDefinition("primitive", [], [TymlTypeInference.anyType]).close();
+    public static stringType = new BaseTypeDefinition("string", [], [TymlTypeInference.anyType]).close();
+    public static objectType = new BaseTypeDefinition("object", [], [TymlTypeInference.anyType]).close();
+    public static arrayDef = new BaseTypeDefinition("array", [Variance.Out], [TymlTypeInference.anyType]);
 
+    constructor(private stringValuePredicate: ValuePredicate, 
+                private primitiveValuePredicate: ValuePredicate) { }    
 
+    private inferLiteralType(expectedType: Type, value: string, 
+        valuePredicate: ValuePredicate, baseType: Type) {
+        const accepted = expectedType
+            .normalizeClosed()
+            .filter(type => valuePredicate(type, value));
+        var t = single(accepted, IncompatibilityError, AmbiguityError);
+        if (baseType.isAssignableTo(t)) return baseType;
+        return t;
+    }
 
     public inferStringType(expectedType: Type, value: string) {
-        inferStringOrPrimitiveType(expectedType, value, {
-        getTypeInfo: (type: BaseType) => {
-            if (!type.getAssignableTo().some(t => t == this.stringType)) return null;
-            return { checkValue: (value: string) => true };
-        },
-        getDefaultType: () => this.stringType
-        });
+        return this.inferLiteralType(expectedType, value, 
+            this.stringValuePredicate, TymlTypeInference.stringType)
     }
 
     public inferPrimitiveType(expectedType: Type, value: string) {
-        inferStringOrPrimitiveType(expectedType, value, {
-        getTypeInfo: (type: BaseType) => {
-            if (!type.isAssignableTo(this.primitiveType)) return null;
-            return { checkValue: (value: string) => true };
-        },
-        getDefaultType: () => this.primitiveType
-        });
+        return this.inferLiteralType(expectedType, value, 
+            this.primitiveValuePredicate, TymlTypeInference.primitiveType);
     }
 
     public inferObjectType(expectedType: Type, specifiedType?: BaseTypeDefinition) {
         if (specifiedType != undefined)
             return specifiedType.closeWithInferredArgs(expectedType);
 
-        const r = expectedType
+        const objectTypes = expectedType
             .normalizeClosed()
-            .filter(t => t.isAssignableTo(this.objectType));
-
-        if (r.length == 1) return r[0];
-        
-        throw "cannot infer";
+            .filter(t => t.isAssignableTo(TymlTypeInference.objectType));
+        return single(objectTypes, IncompatibilityError, AmbiguityError);
     }
 
     public inferArrayType(expectedType: Type) {
-        const r = expectedType
+        const compatible = expectedType
             .normalizeClosed()
-            .filter(t => t.getAssignableTo().some(t2 => t2.getBaseType() === this.arrayDef));
+            .filter(t => t == TymlTypeInference.anyType ||
+                t.getAssignableTo().some(t2 => t2.getBaseType() === TymlTypeInference.arrayDef));
+        const result = single(compatible, IncompatibilityError, AmbiguityError);
+        if (result == TymlTypeInference.anyType)
+            return TymlTypeInference.arrayDef.close(TymlTypeInference.anyType);
+        return result;
+    }
 
-        if (r.length == 0) return this.arrayDef.close(this.anyType);
-        if (r.length == 1) return r[0];
-
-        throw "cannot infer";
+    public getArrayItemType(arrayType: Type) {
+        var arrType = single(arrayType.normalizeClosed(), ArgumentError);
+        var arrInst = single(arrType.getAssignableTo()
+            .filter(a => a.getBaseType() == TymlTypeInference.arrayDef), ArgumentError);
+        return single(arrInst.getTypeArgs(), ImplementationError);
     }
 }
