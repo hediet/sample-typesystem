@@ -29,7 +29,7 @@ export class IncompatibilityError extends CannotInferError {
 }
 
 export class ImplementationError extends ExtendableError {
-    constructor() { super("This error should not happen."); }
+    constructor(msg?: string) { super(msg || "This error should not happen."); }
 }
 export class ArgumentError extends ExtendableError {
     constructor(msg?: string) { super(msg); }

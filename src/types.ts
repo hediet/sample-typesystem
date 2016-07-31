@@ -1,40 +1,88 @@
 import { AmbiguityError, IncompatibilityError, CannotInferError, 
     ArgumentError, ImplementationError, single, selectMany } from "./utils";
 
+
+
+export abstract class Type { }
+
+export abstract class DefinitionInstantiation extends Type {
+    constructor(baseType: TypeDefinition, public typeArgs: Type[]) {
+        super();
+        if (baseType.getArity() != typeArgs.length) throw new ArgumentError("invalid arity");
+    }
+}
+
+export class BaseType extends DefinitionInstantiation {
+    constructor(public baseType: BaseTypeDefinition, typeArgs: Type[]) { super(baseType, typeArgs); }
+
+    public getDirectlyAssignableTo(): Type[] {
+        return this.baseType.directlyAssignableTo.map(t => insert(t, this.typeArgs));
+    }
+
+    public getAssignableTo(): BaseType[] {
+        return selectMany(this.getDirectlyAssignableTo(), t => {
+            var bt = single(normalizeClosed(t), ImplementationError);
+            return [ bt ].concat(bt.getAssignableTo());
+        });
+    }
+}
+
+export class AliasInstantiation extends DefinitionInstantiation {
+    constructor(public baseType: AliasTypeDefinition, typeArgs: Type[]) { super(baseType, typeArgs); }
+
+    public getAliasedType(): Type {
+        return insert(this.baseType.aliasedType, this.typeArgs);
+    }
+}
+
+export class UnionType extends Type {
+    constructor(public type1: Type, public type2: Type) { super(); }
+    
+    public get typeArgs(): Type[] { return [ this.type1, this.type2 ]; } 
+}
+
+export class TypeArgument extends Type {
+    constructor(public pos: number) {
+        super();
+        if (pos < 0) throw new ArgumentError("id must be non negative"); 
+    }
+}
+
+
 export enum Variance {
     In, Out, InOut
 }
 
 export abstract class TypeDefinition {
-    constructor(private name: string, private typeParamVariances: Variance[]) {}
+    constructor(private name: string, private arity: number) {}
 
-    public getTypeParamVariances() { return this.typeParamVariances; }
-    public getArity() { return this.typeParamVariances.length; }
+    public getArity() { return this.arity; }
     public toString() { return this.name; }
     public abstract close(...args: Type[]): Type;
 }
 
 export class BaseTypeDefinition extends TypeDefinition {
-    constructor(name: string, typeParamVariances: Variance[], private directlyAssignableTo: Type[]) { 
-        super(name, typeParamVariances);
-        if (directlyAssignableTo.some(t => t.getMaxArgPos() >= this.getArity()))
+    constructor(name: string, public typeParamVariances: Variance[], public directlyAssignableTo: DefinitionInstantiation[]) { 
+        super(name, typeParamVariances.length);
+        if (directlyAssignableTo.some(t => getMaxArgPos(t) >= this.getArity()))
             throw new ArgumentError("invalid arity in type argument");
-        if (directlyAssignableTo.some(t => t.normalize().length > 1))
-            throw new ArgumentError("cannot be assignable to a union type!");
+        directlyAssignableTo.forEach(t => {
+            var normalized = normalizeClosed(t);
+            if (normalized.length != 1) throw new ArgumentError("cannot be assignable to a union type!");
+            ensureParamVariances(normalized[0], typeParamVariances);
+        }); 
     }
 
     public close(...args: Type[]) { return new BaseType(this, args); }
-
-    public getDirectlyAssignableTo(): Type[] { return this.directlyAssignableTo; }
 
     public closeWithInferredArgs(expectedType: Type): Type {
         const argVars = [] as TypeArgument[];
         for (let i = 0; i < this.getArity(); i++) argVars[i] = new TypeArgument(i);
         const assignableTo = this.close(...argVars).getAssignableTo();
 
-        var matchings = selectMany(expectedType.normalizeClosed(), curExp => 
+        var matchings = selectMany(normalizeClosed(expectedType), curExp => 
             assignableTo
-                .filter(t => t.getBaseType() == curExp.getBaseType())
+                .filter(t => t.baseType == curExp.baseType)
                 .map(t => ({ given: t, expected: curExp }))
         );
         let { given, expected } = single(matchings, IncompatibilityError, AmbiguityError);
@@ -43,141 +91,116 @@ export class BaseTypeDefinition extends TypeDefinition {
         BaseTypeDefinition.unify(given, expected, args);
         let idx = 0;
         const result = this.close(...args.map(t => t || new TypeArgument(idx++)));
-        if (!result.isAssignableTo(expectedType)) throw new ImplementationError();
+        if (!isAssignableTo(result, expectedType)) throw new ImplementationError();
         return result;
     }
 
     private static unify(openType: Type, closedType: Type, typeArgs: Type[]) {
-        const normalizedOpenType = single(openType.normalize(), CannotInferError);
+        const normalizedOpenType = single(normalize(openType), CannotInferError);
         if (normalizedOpenType instanceof TypeArgument) {
-            const oldValue = typeArgs[normalizedOpenType.getPosition()];
+            const oldValue = typeArgs[normalizedOpenType.pos];
             if (oldValue == undefined) 
-                typeArgs[normalizedOpenType.getPosition()] = closedType;
-            else if (!oldValue.isEquivalentTo(closedType))
+                typeArgs[normalizedOpenType.pos] = closedType;
+            else if (!isEquivalentTo(oldValue, closedType))
                 throw new IncompatibilityError();
         }
         else if (normalizedOpenType instanceof BaseType) {
-            const normalizedClosedType = single(closedType.normalizeClosed(), CannotInferError);
-            if (normalizedOpenType.getBaseType() != normalizedClosedType.getBaseType())
+            const normalizedClosedType = single(normalizeClosed(closedType), CannotInferError);
+            if (normalizedOpenType.baseType != normalizedClosedType.baseType)
                 throw new IncompatibilityError();
-            normalizedOpenType.getTypeArgs().forEach((t, i) => 
-                this.unify(t, normalizedClosedType.getTypeArgs()[i], typeArgs)
+            normalizedOpenType.typeArgs.forEach((t, i) => 
+                this.unify(t, normalizedClosedType.typeArgs[i], typeArgs)
             );
         }	
     }
 }
 
 export class AliasTypeDefinition extends TypeDefinition {
-    constructor(name: string, arity: number, private aliasedType: Type) { 
+    constructor(name: string, arity: number, public aliasedType: Type) { 
         super(name, arity);
-        if (aliasedType.getMaxArgPos() >= arity)
-            throw new ArgumentError("invalid arity in type argument");
+        if (getMaxArgPos(aliasedType) >= this.getArity()) throw new ArgumentError("invalid arity in type argument");
     }
 
     public close(...args: Type[]) { return new AliasInstantiation(this, args); }
-    public getAliasedType(): Type { return this.aliasedType; }
 }
 
-export abstract class Type {
-    public abstract toString(): string;
-    public abstract getMaxArgPos(): number;
-    public abstract insert(args: Type[]): Type;
-    public abstract normalize(): (BaseType | TypeArgument)[];
+function ensureParamVariances(type: BaseType, typeParamVariances: Variance[]) {
 
-    public normalizeClosed() {
-        var result = this.normalize(); 
-        if (result.some(n => n instanceof TypeArgument))
-            throw new ImplementationError("Unexpected TypeArgument was found: Underlying type was not closed.");
-        return result as BaseType[]; 
-    }
-
-    public isEquivalentTo(other: Type) {
-        return this.isAssignableTo(other) && other.isAssignableTo(this);
-    }
-
-    public isAssignableTo(other: Type): boolean {
-        const otherNormalized = other.normalizeClosed();
-        return this.normalizeClosed().every(e => otherNormalized.some(o => 
-            e.getAssignableTo().filter(t => t.isEquivalentTo(o)).length > 0));
-    }
-}
-
-export abstract class DefinitionInstantiation<T extends TypeDefinition> extends Type {
-    constructor(private type: T, private typeArgs: Type[], 
-                private ctor: new (type: T, args: Type[]) => Type) {
-        super();
-        if (type.getArity() != typeArgs.length) throw new ArgumentError("invalid arity");
-    }
-
-    public getTypeArgs() { return this.typeArgs; }
-    public getBaseType(): T { return this.type; }
-    public getMaxArgPos(): number { return Math.max(-1, ...this.typeArgs.map(t => t.getMaxArgPos())); }
-
-    public toString(): string { 
-        let args = this.typeArgs.map(t => t.toString()).join(", ");
-        return this.type.toString() + (args == "" ? "" : ("<" + args + ">"));
-    }
-
-    public insert(args: Type[]): Type { 
-        return new this.ctor(this.getBaseType(), this.getTypeArgs().map(t => t.insert(args))); 
-    }
-}
-
-export class BaseType extends DefinitionInstantiation<BaseTypeDefinition> {
-    constructor(type: BaseTypeDefinition, typeArgs: Type[]) { 
-        super(type, typeArgs, BaseType); 
-    }
-
-    public getDirectlyAssignableTo(): Type[] {
-        return this.getBaseType().getDirectlyAssignableTo().map(t => t.insert(this.getTypeArgs()));
-    }
-
-    public getAssignableTo(): BaseType[] {
-        return selectMany(this.getDirectlyAssignableTo(), t => {
-            var bt = single(t.normalizeClosed(), ImplementationError);
-            return [ bt ].concat(bt.getAssignableTo());
+    type.typeArgs.forEach((arg, idx) => {
+        normalize(arg).forEach(t => { 
+            if (t instanceof TypeArgument) {
+                var given = typeParamVariances[t.pos];
+                var expected = type.baseType.typeParamVariances[idx];
+                if (given != expected && given != Variance.InOut)
+                    throw new ArgumentError(`Invariance violated! Typeparameter ${ t.pos } with variance ${ given } must be compatible to variance ${ expected }.`);
+            }
+            else if (t instanceof BaseType) {
+                ensureParamVariances(t, typeParamVariances);
+            }
         });
-    }
-
-    public isEquivalentTo(other: Type) {
-        if (other instanceof BaseType) {
-            let o: BaseType = other;
-            return this.getBaseType() == o.getBaseType() &&
-                this.getTypeArgs().every((arg, i) => arg.isEquivalentTo(o.getTypeArgs()[i]));
-        }
-        return super.isEquivalentTo(other);
-    }
-
-    public normalize() { return [ this ]; }
+    });
 }
 
-export class AliasInstantiation extends DefinitionInstantiation<AliasTypeDefinition> {
-    constructor(type: AliasTypeDefinition, typeArgs: Type[]) { super(type, typeArgs, AliasInstantiation); }
+function insertMany(types: Type[], args: Type[]): Type[] { return types.map(t => insert(t, args)); }
 
-    public getAliasedType(): Type {
-        return this.getBaseType().getAliasedType().insert(this.getTypeArgs());
-    }
-    public normalize() { return this.getAliasedType().normalize(); }
+function insert(type: Type, args: Type[]): Type {
+    if (type instanceof BaseType)           return new BaseType(type.baseType, insertMany(type.typeArgs, args));
+    if (type instanceof AliasInstantiation) return new AliasInstantiation(type.baseType, insertMany(type.typeArgs, args));
+    if (type instanceof UnionType)          return new UnionType(insert(type.type1, args), insert(type.type2, args));
+    if (type instanceof TypeArgument)       return (type.pos < args.length) ? args[type.pos] : type;
 }
 
-export class UnionType extends Type {
-    constructor(private type1: Type, private type2: Type) { super(); }
-
-    public getMaxArgPos(): number { return Math.max(this.type1.getMaxArgPos(), this.type2.getMaxArgPos()); }
-    public insert(args: Type[]): Type { return new UnionType(this.type1.insert(args), this.type2.insert(args)); }
-    public normalize() { return this.type1.normalize().concat(this.type2.normalize()); }
-    public toString(): string { return this.type1.toString() + " | " + this.type2.toString(); }
+function toString(type: Type) {
+    if (type instanceof BaseType || type instanceof AliasInstantiation) {
+        let args = type.typeArgs.map(t => t.toString()).join(", ");
+        return type.baseType.toString() + (args == "" ? "" : ("<" + args + ">"));
+    }
+    if (type instanceof UnionType)      return type.type1.toString() + " | " + type.type2.toString();
+    if (type instanceof TypeArgument)   return type.pos.toString();
 }
 
-export class TypeArgument extends Type {
-    constructor(private pos: number) {
-        super();
-        if (pos < 0) throw new ArgumentError("id must be non negative"); 
+function getMaxArgPos(type: Type): number {
+    if (type instanceof AliasInstantiation || type instanceof BaseType || type instanceof UnionType) 
+        return Math.max(-1, ...type.typeArgs.map(getMaxArgPos));
+    if (type instanceof TypeArgument)   return type.pos;
+}
+
+/**
+ * Factors out union and alias types.
+ */
+function normalize(type: Type): (BaseType | TypeArgument)[] {
+    if (type instanceof BaseType)           return [ type ];
+    if (type instanceof AliasInstantiation) return normalize(type.getAliasedType());
+    if (type instanceof UnionType)          return normalize(type.type1).concat(normalize(type.type2));
+    if (type instanceof TypeArgument)       return [ type ];
+}
+
+/**
+ * Factors out union and alias types and ensures that result has no type arguments.
+ */
+function normalizeClosed(type: Type): BaseType[] {
+    var result = normalize(type); 
+    if (result.some(n => n instanceof TypeArgument))
+        throw new ImplementationError("Unexpected TypeArgument was found: Underlying type was not closed.");
+    return result as BaseType[]; 
+}
+
+function isEquivalentTo(type: Type, other: Type) {
+    if (type instanceof BaseType && other instanceof BaseType) {
+        return type.baseType == other.baseType &&
+            type.typeArgs.every((arg, i) => isEquivalentTo(arg, other.typeArgs[i]));
+    }
+    return isAssignableTo(type, other) && isAssignableTo(other, type);
+}
+
+
+
+function isAssignableTo(type: Type, other: Type): boolean {
+    if (type instanceof BaseType && other instanceof BaseType) {
+        //todo
     }
 
-    public getPosition(): number { return this.pos; }
-    public getMaxArgPos(): number { return this.pos; }
-    public insert(args: Type[]): Type { return (this.pos < args.length) ? args[this.pos] : this; }
-    public normalize() { return [ this ]; }
-    public toString(): string { return this.pos.toString(); }
+    const otherNormalized = normalizeClosed(other);
+    return normalizeClosed(type).every(e => otherNormalized.some(o => 
+        e.getAssignableTo().filter(t => isAssignableTo(t, o)).length > 0));
 }
