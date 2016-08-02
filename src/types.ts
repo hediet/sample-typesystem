@@ -19,10 +19,13 @@ export class BaseType extends DefinitionInstantiation {
         return this.baseType.directlyAssignableTo.map(t => insert(t, this.typeArgs));
     }
 
-    public getAssignableTo(): BaseType[] {
-        return selectMany(this.getDirectlyAssignableTo(), t => {
-            var bt = single(normalizeClosed(t), ImplementationError);
-            return [ bt ].concat(bt.getAssignableTo());
+    public getBaseTypesDirectlyAssignableTo(): BaseType[] {
+        return this.getDirectlyAssignableTo().map(t => single(normalizeClosed(t), ImplementationError));
+    }
+
+    public getBaseTypesAssignableTo(): BaseType[] {
+        return selectMany(this.getBaseTypesDirectlyAssignableTo(), t => {
+            return [ t ].concat(t.getBaseTypesAssignableTo());
         });
     }
 }
@@ -78,7 +81,7 @@ export class BaseTypeDefinition extends TypeDefinition {
     public closeWithInferredArgs(expectedType: Type): Type {
         const argVars = [] as TypeArgument[];
         for (let i = 0; i < this.getArity(); i++) argVars[i] = new TypeArgument(i);
-        const assignableTo = this.close(...argVars).getAssignableTo();
+        const assignableTo = this.close(...argVars).getBaseTypesAssignableTo();
 
         var matchings = selectMany(normalizeClosed(expectedType), curExp => 
             assignableTo
@@ -132,7 +135,8 @@ function ensureParamVariances(type: BaseType, typeParamVariances: Variance[]) {
                 var given = typeParamVariances[t.pos];
                 var expected = type.baseType.typeParamVariances[idx];
                 if (given != expected && given != Variance.InOut)
-                    throw new ArgumentError(`Invariance violated! Typeparameter ${ t.pos } with variance ${ given } must be compatible to variance ${ expected }.`);
+                    throw new ArgumentError(`Invariance violated! Typeparameter ${ t.pos } with variance ${ 
+                        given } must be compatible to variance ${ expected }.`);
             }
             else if (t instanceof BaseType) {
                 ensureParamVariances(t, typeParamVariances);
@@ -169,10 +173,9 @@ function getMaxArgPos(type: Type): number {
  * Factors out union and alias types.
  */
 function normalize(type: Type): (BaseType | TypeArgument)[] {
-    if (type instanceof BaseType)           return [ type ];
+    if (type instanceof BaseType || type instanceof TypeArgument) return [ type ];
     if (type instanceof AliasInstantiation) return normalize(type.getAliasedType());
     if (type instanceof UnionType)          return normalize(type.type1).concat(normalize(type.type2));
-    if (type instanceof TypeArgument)       return [ type ];
 }
 
 /**
@@ -185,22 +188,24 @@ function normalizeClosed(type: Type): BaseType[] {
     return result as BaseType[]; 
 }
 
-function isEquivalentTo(type: Type, other: Type) {
-    if (type instanceof BaseType && other instanceof BaseType) {
-        return type.baseType == other.baseType &&
-            type.typeArgs.every((arg, i) => isEquivalentTo(arg, other.typeArgs[i]));
-    }
+function isEquivalentTo(type: Type, other: Type): boolean {
+    return checkVariance(type, other, Variance.InOut);
+}
+
+function checkVariance(type: Type, other: Type, variance: Variance): boolean {
+    if (variance == Variance.In) return isAssignableTo(type, other);
+    if (variance == Variance.Out) return isAssignableTo(other, type);
     return isAssignableTo(type, other) && isAssignableTo(other, type);
 }
 
-
-
 function isAssignableTo(type: Type, other: Type): boolean {
     if (type instanceof BaseType && other instanceof BaseType) {
-        //todo
+        if (type.baseType == other.baseType)
+            return type.typeArgs.every((arg, idx) => 
+                checkVariance(arg, other.typeArgs[idx], type.baseType.typeParamVariances[idx]));
+         
+        return type.getDirectlyAssignableTo().some(t => isAssignableTo(t, other));
     }
 
-    const otherNormalized = normalizeClosed(other);
-    return normalizeClosed(type).every(e => otherNormalized.some(o => 
-        e.getAssignableTo().filter(t => isAssignableTo(t, o)).length > 0));
+    return normalizeClosed(type).every(t => normalizeClosed(other).some(o => isAssignableTo(t, o))); 
 }
