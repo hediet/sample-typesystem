@@ -1,4 +1,4 @@
-import { Variance, BaseTypeDefinition, TypeArgument, Type, BaseType, AliasTypeDefinition, UnionType } from "./types.ts";
+import { Variance, BaseTypeDefinition, TypeArgument, Type, BaseType, AliasTypeDefinition, UnionType } from "./types";
 
 const v = (id: number) => new TypeArgument(id);
 
@@ -23,20 +23,24 @@ function example1() {
 }
 
 function example2() {
-    const pair = new BaseTypeDefinition("pair", 2, [object.close()]);
-    const dictionary = new BaseTypeDefinition("dictionary", 2, [enumerable.close(pair.close(v(0), v(1)))]);
+    const pair = new BaseTypeDefinition("pair", [Variance.Out, Variance.Out], [object.close()]);
+    const dictionary = new BaseTypeDefinition("dictionary", [Variance.Out, Variance.Out], [enumerable.close(pair.close(v(0), v(1)))]);
 
     const r = dictionary.closeWithInferredArgs(enumerable.close(pair.close(str.close(), int.close())));
     console.log(r.toString());
 }
 
 function example3() {
-    const valueProvider = new BaseTypeDefinition("ValueProvider", 1, [object.close()]);
+    const valueProvider = new BaseTypeDefinition("ValueProvider", [Variance.Out], [object.close()]);
     const dynamic = new AliasTypeDefinition("Dynamic", 1, new UnionType(v(0), valueProvider.close(v(0))));
-    const nul = new BaseTypeDefinition("Null", 0, []);
+    const nul = new BaseTypeDefinition("Null", [], []);
     const nullable = new AliasTypeDefinition("Nullable", 1, new UnionType(nul.close(), v(0)));
-    const func = new BaseTypeDefinition("Func", 1, [valueProvider.close(v(0))]);
+    const func = new BaseTypeDefinition("Func", [Variance.Out], [valueProvider.close(v(0))]);
 
     const r = func.closeWithInferredArgs(dynamic.close(nullable.close(str.close())));
     console.log(r.toString());
+
+    console.log(func.close(str.close()).isAssignableTo(func.close(anyType)));
 }
+
+example3();

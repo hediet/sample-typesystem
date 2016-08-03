@@ -1,57 +1,6 @@
 import { AmbiguityError, IncompatibilityError, CannotInferError, 
     ArgumentError, ImplementationError, single, selectMany } from "./utils";
 
-
-
-export abstract class Type { }
-
-export abstract class DefinitionInstantiation extends Type {
-    constructor(baseType: TypeDefinition, public typeArgs: Type[]) {
-        super();
-        if (baseType.getArity() != typeArgs.length) throw new ArgumentError("invalid arity");
-    }
-}
-
-export class BaseType extends DefinitionInstantiation {
-    constructor(public baseType: BaseTypeDefinition, typeArgs: Type[]) { super(baseType, typeArgs); }
-
-    public getDirectlyAssignableTo(): Type[] {
-        return this.baseType.directlyAssignableTo.map(t => insert(t, this.typeArgs));
-    }
-
-    public getBaseTypesDirectlyAssignableTo(): BaseType[] {
-        return this.getDirectlyAssignableTo().map(t => single(normalizeClosed(t), ImplementationError));
-    }
-
-    public getBaseTypesAssignableTo(): BaseType[] {
-        return selectMany(this.getBaseTypesDirectlyAssignableTo(), t => {
-            return [ t ].concat(t.getBaseTypesAssignableTo());
-        });
-    }
-}
-
-export class AliasInstantiation extends DefinitionInstantiation {
-    constructor(public baseType: AliasTypeDefinition, typeArgs: Type[]) { super(baseType, typeArgs); }
-
-    public getAliasedType(): Type {
-        return insert(this.baseType.aliasedType, this.typeArgs);
-    }
-}
-
-export class UnionType extends Type {
-    constructor(public type1: Type, public type2: Type) { super(); }
-    
-    public get typeArgs(): Type[] { return [ this.type1, this.type2 ]; } 
-}
-
-export class TypeArgument extends Type {
-    constructor(public pos: number) {
-        super();
-        if (pos < 0) throw new ArgumentError("id must be non negative"); 
-    }
-}
-
-
 export enum Variance {
     In, Out, InOut
 }
@@ -69,18 +18,39 @@ export class BaseTypeDefinition extends TypeDefinition {
         super(name, typeParamVariances.length);
         if (directlyAssignableTo.some(t => getMaxArgPos(t) >= this.getArity()))
             throw new ArgumentError("invalid arity in type argument");
+
         directlyAssignableTo.forEach(t => {
             var normalized = normalizeClosed(t);
             if (normalized.length != 1) throw new ArgumentError("cannot be assignable to a union type!");
-            ensureParamVariances(normalized[0], typeParamVariances);
+            BaseTypeDefinition.ensureParamVariances(normalized[0], typeParamVariances);
         }); 
+    }
+
+    // ensures that type parameters are not used as arguments for other types which require a non compatible variance
+    private static ensureParamVariances(type: BaseType, typeParamVariances: Variance[]) {
+        type.typeArgs.forEach((arg, idx) => {
+            normalize(arg).forEach(t => { 
+                if (t instanceof TypeArgument) {
+                    var given = typeParamVariances[t.pos];
+                    var expected = type.baseType.typeParamVariances[idx];
+                    if (given != expected && given != Variance.InOut)
+                        throw new ArgumentError(`Invariance violated! Typeparameter ${ t.pos } with variance ${ 
+                            given } must be compatible to variance ${ expected }.`);
+                }
+                else if (t instanceof BaseType) {
+                    BaseTypeDefinition.ensureParamVariances(t, typeParamVariances);
+                }
+            });
+        });
     }
 
     public close(...args: Type[]) { return new BaseType(this, args); }
 
     public closeWithInferredArgs(expectedType: Type): Type {
         const argVars = [] as TypeArgument[];
-        for (let i = 0; i < this.getArity(); i++) argVars[i] = new TypeArgument(i);
+        for (let i = 0; i < this.getArity(); i++) 
+            argVars[i] = new TypeArgument(i);
+
         const assignableTo = this.close(...argVars).getBaseTypesAssignableTo();
 
         var matchings = selectMany(normalizeClosed(expectedType), curExp => 
@@ -88,7 +58,7 @@ export class BaseTypeDefinition extends TypeDefinition {
                 .filter(t => t.baseType == curExp.baseType)
                 .map(t => ({ given: t, expected: curExp }))
         );
-        let { given, expected } = single(matchings, IncompatibilityError, AmbiguityError);
+        const { given, expected } = single(matchings, IncompatibilityError, AmbiguityError);
 
         const args = argVars.map(a => undefined as Type);
         BaseTypeDefinition.unify(given, expected, args);
@@ -127,22 +97,55 @@ export class AliasTypeDefinition extends TypeDefinition {
     public close(...args: Type[]) { return new AliasInstantiation(this, args); }
 }
 
-function ensureParamVariances(type: BaseType, typeParamVariances: Variance[]) {
+export abstract class Type { 
+    public toString() { return toString(this); }
+    public normalizeClosed(): BaseType[] { return normalizeClosed(this); }
+    public normalize(): (BaseType | TypeArgument)[] { return normalize(this); }
+    public isAssignableTo(other: Type): boolean { return isAssignableTo(this, other); }
+}
 
-    type.typeArgs.forEach((arg, idx) => {
-        normalize(arg).forEach(t => { 
-            if (t instanceof TypeArgument) {
-                var given = typeParamVariances[t.pos];
-                var expected = type.baseType.typeParamVariances[idx];
-                if (given != expected && given != Variance.InOut)
-                    throw new ArgumentError(`Invariance violated! Typeparameter ${ t.pos } with variance ${ 
-                        given } must be compatible to variance ${ expected }.`);
-            }
-            else if (t instanceof BaseType) {
-                ensureParamVariances(t, typeParamVariances);
-            }
+export abstract class DefinitionInstantiation extends Type {
+    constructor(baseType: TypeDefinition, public typeArgs: Type[]) {
+        super();
+        if (baseType.getArity() != typeArgs.length) throw new ArgumentError("invalid arity");
+    }
+}
+
+export class BaseType extends DefinitionInstantiation {
+    constructor(public baseType: BaseTypeDefinition, typeArgs: Type[]) { super(baseType, typeArgs); }
+
+    public getDirectlyAssignableTo(): Type[] {
+        return this.baseType.directlyAssignableTo.map(t => insert(t, this.typeArgs));
+    }
+
+    public getBaseTypesDirectlyAssignableTo(): BaseType[] {
+        return this.getDirectlyAssignableTo().map(t => single(normalizeClosed(t), ImplementationError));
+    }
+
+    public getBaseTypesAssignableTo(): BaseType[] {
+        return selectMany(this.getBaseTypesDirectlyAssignableTo(), t => {
+            return [ t ].concat(t.getBaseTypesAssignableTo());
         });
-    });
+    }
+}
+
+export class AliasInstantiation extends DefinitionInstantiation {
+    constructor(public baseType: AliasTypeDefinition, typeArgs: Type[]) { super(baseType, typeArgs); }
+
+    public getAliasedType(): Type { return insert(this.baseType.aliasedType, this.typeArgs); }
+}
+
+export class UnionType extends Type {
+    constructor(public type1: Type, public type2: Type) { super(); }
+    
+    public get typeArgs(): Type[] { return [ this.type1, this.type2 ]; } 
+}
+
+export class TypeArgument extends Type {
+    constructor(public pos: number) {
+        super();
+        if (pos < 0) throw new ArgumentError("id must be non negative"); 
+    }
 }
 
 function insertMany(types: Type[], args: Type[]): Type[] { return types.map(t => insert(t, args)); }
@@ -193,8 +196,8 @@ function isEquivalentTo(type: Type, other: Type): boolean {
 }
 
 function checkVariance(type: Type, other: Type, variance: Variance): boolean {
-    if (variance == Variance.In) return isAssignableTo(type, other);
-    if (variance == Variance.Out) return isAssignableTo(other, type);
+    if (variance == Variance.In) return isAssignableTo(other, type);
+    if (variance == Variance.Out) return isAssignableTo(type, other);
     return isAssignableTo(type, other) && isAssignableTo(other, type);
 }
 

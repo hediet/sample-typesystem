@@ -59,6 +59,6 @@ export class TymlTypeInference {
         var arrType = single(arrayType.normalizeClosed(), ArgumentError);
         var arrInst = single(arrType.getAssignableTo()
             .filter(a => a.getBaseType() == TymlTypeInference.arrayDef), ArgumentError);
-        return single(arrInst.getTypeArgs(), ImplementationError);
+        return single(arrInst.typeArg, ImplementationError);
     }
 }

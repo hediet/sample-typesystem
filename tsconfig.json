@@ -9,7 +9,7 @@
         "watch": true
     },
 	"files": [
-        "src/app.tsx",
+        "src/app.ts",
         "src/types.ts",
         "src/utils.ts",
         "src/tymlTests.ts",
