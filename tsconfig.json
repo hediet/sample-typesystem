@@ -3,17 +3,13 @@
         "module": "commonjs",
         "target": "es5",
         "noImplicitAny": true,
+        "strictNullChecks": true,
         "sourceMap": true,
 		"jsx": "react",
-        "outDir": "dist",
-        "watch": true
+        "watch": true,
+        "outDir": "dist"
     },
-	"files": [
-        "src/app.ts",
-        "src/types.ts",
-        "src/utils.ts",
-        "src/tymlTests.ts",
-        "src/tyml.ts",
-		"typings/index.d.ts"
-	]
+    "exclude": [
+        "node_modules", "dist"
+    ]
 }

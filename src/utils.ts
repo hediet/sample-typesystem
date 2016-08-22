@@ -9,6 +9,13 @@ export function single<T>(arr: T[], noElementException: new() => any,
     return arr[0];
 }
 
+export function range<T>(count: number) {
+    const arr = [] as number[];
+    for (let i = 0; i < count; i++) 
+        arr[i] = i;
+    return arr;
+}
+
 class ExtendableError extends Error {
     public stack: string;
 

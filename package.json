@@ -1,58 +1,26 @@
 {
-  "jspm": {
-    "name": "app",
-    "dependencies": {
-      "react-dom": "npm:react-dom@^0.14.7",
-      "ts": "github:frankwallis/plugin-typescript@^4.0.16",
-      "typescript": "npm:typescript@^1.8.10"
-    },
-    "devDependencies": {
-      "plugin-typescript": "github:frankwallis/plugin-typescript@^4.0.1"
-    },
-    "peerDependencies": {
-      "os": "github:jspm/nodelibs-os@^0.2.0-alpha",
-      "process": "github:jspm/nodelibs-process@^0.2.0-alpha",
-      "react": "npm:react@^0.14.7"
-    },
-    "overrides": {
-      "npm:fbjs@0.6.1": {
-        "dependencies": {}
-      },
-      "npm:react@0.14.7": {
-        "dependencies": {
-          "fbjs": "^0.6.1"
-        },
-        "format": "cjs",
-        "meta": {
-          "*": {
-            "globals": {
-              "process": "process"
-            }
-          }
-        },
-        "map": {
-          "fbjs/lib/ExecutionEnvironment.js": {
-            "production": "@empty"
-          },
-          "./lib/ReactDefaultPerf.js": {
-            "production": "@empty"
-          },
-          "./lib/ReactTestUtils.js": {
-            "production": "@empty"
-          }
-        }
-      },
-      "npm:typescript@1.8.10": {
-        "browser": {},
-        "map": {
-          "buffer": "@empty",
-          "child_process": "@empty",
-          "fs": "@empty",
-          "path": "@empty",
-          "process": "@empty",
-          "readline": "@empty"
-        }
-      }
-    }
+  "name": "template",
+  "version": "0.1.0",
+  "scripts": {
+    "bundle-dev": "./node_modules/.bin/webpack-dev-server -d --hot --inline",
+    "bundle": "./node_modules/.bin/webpack"
+  },
+  "dependencies": {
+    "@types/react": "^0.14.30",
+    "@types/react-dom": "^0.14.14",
+    "react": "^15.3.0",
+    "react-dom": "^15.3.0"
+  },
+  "devDependencies": {
+    "css-loader": "^0.23.1",
+    "file-loader": "^0.9.0",
+    "html-webpack-plugin": "^2.22.0",
+    "source-map-loader": "^0.1.5",
+    "style-loader": "^0.13.1",
+    "ts-loader": "^0.8.2",
+    "typescript": "^2.0.0",
+    "webpack": "^1.13.1",
+    "webpack-dev-server": "^1.14.1",
+    "webpack-split-by-path": "^0.1.0"
   }
-}
+}

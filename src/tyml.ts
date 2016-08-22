@@ -1,4 +1,4 @@
-import { Variance, BaseTypeDefinition, TypeArgument, Type, BaseType, AliasTypeDefinition, UnionType } from "./types";
+import { Variance, BaseTypeDefinition, TypeParameter, Type, BaseType, AliasTypeDefinition, UnionType } from "./types";
 import { ImplementationError, AmbiguityError, IncompatibilityError, ArgumentError, single } from "./utils";
 
 export type ValuePredicate = (type: BaseType, value: string) => boolean;
@@ -48,7 +48,7 @@ export class TymlTypeInference {
         const compatible = expectedType
             .normalizeClosed()
             .filter(t => t == TymlTypeInference.anyType ||
-                t.getAssignableTo().some(t2 => t2.getBaseType() === TymlTypeInference.arrayDef));
+                t.getBaseTypesAssignableTo().some(t2 => t2.definition === TymlTypeInference.arrayDef));
         const result = single(compatible, IncompatibilityError, AmbiguityError);
         if (result == TymlTypeInference.anyType)
             return TymlTypeInference.arrayDef.close(TymlTypeInference.anyType);
@@ -57,8 +57,8 @@ export class TymlTypeInference {
 
     public getArrayItemType(arrayType: Type) {
         var arrType = single(arrayType.normalizeClosed(), ArgumentError);
-        var arrInst = single(arrType.getAssignableTo()
-            .filter(a => a.getBaseType() == TymlTypeInference.arrayDef), ArgumentError);
-        return single(arrInst.typeArg, ImplementationError);
+        var arrInst = single(arrType.getBaseTypesAssignableTo()
+            .filter(a => a.definition == TymlTypeInference.arrayDef), ArgumentError);
+        return single(arrInst.typeArgs, ImplementationError);
     }
 }

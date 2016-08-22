@@ -1,6 +1,6 @@
-import { Variance, BaseTypeDefinition, TypeArgument, Type, BaseType, AliasTypeDefinition, UnionType } from "./types";
+import { Variance, BaseTypeDefinition, TypeParameter, Type, BaseType, AliasTypeDefinition, UnionType } from "./types";
 
-const v = (id: number) => new TypeArgument(id);
+const v = (id: number) => new TypeParameter(id);
 
 
 const anyType = new BaseTypeDefinition("Any", [], []).close();

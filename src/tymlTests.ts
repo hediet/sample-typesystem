@@ -1,13 +1,13 @@
 import { TymlTypeInference } from "./tyml";
-import { BaseType, BaseTypeDefinition, UnionType, TypeArgument } from "./types";
+import { BaseType, BaseTypeDefinition, UnionType, TypeParameter, Variance } from "./types";
 
-const v = (id: number) => new TypeArgument(id);
+const v = (id: number) => new TypeParameter(id);
 
 
 const { anyType, objectType, primitiveType, stringType, arrayDef } = TymlTypeInference;
 
-const boolType = new BaseTypeDefinition("Boolean", 0, [ primitiveType ]).close();
-const nullType = new BaseTypeDefinition("Null", 0, [ primitiveType ]).close();
+const boolType = new BaseTypeDefinition("Boolean", [], [ primitiveType ]).close();
+const nullType = new BaseTypeDefinition("Null", [], [ primitiveType ]).close();
 
 function matchExact(r: RegExp, s: string): boolean {
     return new RegExp("^(" + r.source + ")$").test(s);
@@ -34,8 +34,8 @@ function test1() {
 }
 
 function test2() {
-    var mylist = new BaseTypeDefinition("MyList", 1, [ arrayDef.close(v(0)) ]);
-    var myspeclist = new BaseTypeDefinition("MySpecList", 0, [ mylist.close(boolType) ]);
+    var mylist = new BaseTypeDefinition("MyList", [Variance.In], [ arrayDef.close(v(0)) ]);
+    var myspeclist = new BaseTypeDefinition("MySpecList", [], [ mylist.close(boolType) ]);
     var expected = new UnionType(boolType, myspeclist.close());
 
     var arrType = i.inferArrayType(expected);
