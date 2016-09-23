@@ -56,14 +56,14 @@ export class BaseTypeDefinition extends TypeDefinition {
             var expectedParamVariance = type.definition.typeParamVariances[idx];
 
             providedArg.normalize().forEach(normalizedArg => { 
-                if (normalizedArg.isTypeParameter()) {
+                if (normalizedArg instanceof TypeParameter) {
                     var actualParamVariance = typeParamVariances[normalizedArg.pos];
                     
                     if (actualParamVariance != expectedParamVariance && actualParamVariance != Variance.InOut)
                         throw new ArgumentError(`Invariance violated! Type-parameter ${ normalizedArg.pos } with variance ${ 
                             actualParamVariance } must be compatible to variance ${ expectedParamVariance }.`);
                 }
-                else if (normalizedArg.isBaseType()) {
+                else if (normalizedArg instanceof BaseType) {
                     BaseTypeDefinition.ensureParamVariances(normalizedArg, typeParamVariances);
                 }
             });
@@ -72,10 +72,16 @@ export class BaseTypeDefinition extends TypeDefinition {
 
     public close(...args: Type[]) { return new BaseType(this, args); }
     
+    /**
+     * Tries to close this definition with arguments inferred from expectedType so that 
+     * the resulting type is assignable to expectedType.
+     */
     public closeWithInferredArgs(expectedType: Type): Type {
         const argVars = range(this.getArity()).map(i => new TypeParameter(i));
+        // get all base types (including transitive ones) that this type is assignable to
         const assignableTo = this.close(...argVars).getBaseTypesAssignableTo();
 
+        // filter to all that 
         var matchings = selectMany(expectedType.normalizeClosed(), curExp => 
             assignableTo
                 .filter(t => t.definition === curExp.definition)
@@ -92,14 +98,14 @@ export class BaseTypeDefinition extends TypeDefinition {
 
     private static unify(openType: Type, closedType: Type, typeArgs: (Type|undefined)[]) {
         const normalizedOpenType = single(openType.normalize(), CannotInferError);
-        if (normalizedOpenType.isTypeParameter()) {
+        if (normalizedOpenType instanceof TypeParameter) {
             const oldValue = typeArgs[normalizedOpenType.pos];
             if (oldValue == undefined) 
                 typeArgs[normalizedOpenType.pos] = closedType;
             else if (!isEquivalentTo(oldValue, closedType))
                 throw new IncompatibilityError();
         }
-        else if (normalizedOpenType.isBaseType()) {
+        else if (normalizedOpenType instanceof BaseType) {
             const normalizedClosedType = single(closedType.normalizeClosed(), CannotInferError);
             if (normalizedOpenType.definition != normalizedClosedType.definition)
                 throw new IncompatibilityError();
@@ -121,20 +127,15 @@ export class AliasTypeDefinition extends TypeDefinition {
 
 
 export abstract class Type {
-    public isUnionType(): this is UnionType { return this instanceof UnionType; }
-    public isTypeParameter(): this is TypeParameter { return this instanceof TypeParameter; }
-    public isBaseType(): this is BaseType { return this instanceof BaseType; }
-    public isAliasInstantiation(): this is AliasInstantiation { return this instanceof AliasInstantiation; }
-
     /** Returns a string representation of the "type" argument. */
     public toString(): string {
         const self = this;
-        if (self.isBaseType() || self.isAliasInstantiation()) {
+        if (self instanceof BaseType || self instanceof AliasInstantiation) {
             let args = self.typeArgs.map(t => t.toString()).join(", ");
             return self.definition.toString() + (args == "" ? "" : ("<" + args + ">"));
         }
-        if (self.isUnionType())      return self.type1.toString() + " | " + self.type2.toString();
-        if (self.isTypeParameter())   return self.pos.toString();
+        if (self instanceof UnionType)      return self.type1.toString() + " | " + self.type2.toString();
+        if (self instanceof TypeParameter)   return self.pos.toString();
         throw Error("Unknown type");
     }
 
@@ -144,16 +145,15 @@ export abstract class Type {
      */
     public normalize(): (BaseType|TypeParameter)[] {
         const self = this;
-        if (self.isBaseType() || self.isTypeParameter()) return [ self ];
-        if (self.isAliasInstantiation()) return self.getAliasedType().normalize();
-        if (self.isUnionType())          return self.type1.normalize().concat(self.type2.normalize());
+        if (self instanceof BaseType || self instanceof TypeParameter) return [ self ];
+        if (self instanceof AliasInstantiation) return self.getAliasedType().normalize();
+        if (self instanceof UnionType)          return self.type1.normalize().concat(self.type2.normalize());
         throw Error("Unknown type");
     }
 
     public normalizeClosed(): BaseType[] {
         const normalized = this.normalize();
-        if (normalized.some(n => n instanceof TypeParameter)) 
-            throw new ArgumentError("Type is not closed!");
+        if (normalized.some(n => n instanceof TypeParameter)) throw new ArgumentError("Type is not closed!");
         return normalized as BaseType[];
     }
 
@@ -162,13 +162,15 @@ export abstract class Type {
     // method only used so that open type can be used as closed type.
 
     /**
-     * Checks wether "type" is assignable to "other". "type" and "other" must not contain any type parameters, i.e. must be fully closed types.
-     * This method is private and only callable when casted to FullyClosedType interface.
+     * Checks wether "type" is assignable to "other". "type" and "other" must not contain any type parameters.
      */
     public isAssignableTo(other: Type): boolean {
         const self = this;
         
-        if (self.isBaseType() && other.isBaseType()) {
+        if (self instanceof TypeParameter || other instanceof TypeParameter) 
+            throw new ArgumentError("Type is not closed.");
+
+        if (self instanceof BaseType && other instanceof BaseType) {
             if (self.definition == other.definition)
                 return self.typeArgs.every((arg, idx) => 
                     checkVariance(arg, other.typeArgs[idx], self.definition.typeParamVariances[idx]));
@@ -176,7 +178,8 @@ export abstract class Type {
             return self.getDirectlyAssignableTo().some(t => t.isAssignableTo(other));
         }
 
-        // If type 
+        // [A, B] is assignable to C iff both A and B are assignable to C.
+        // A is assignable to [C, D] iff A is assignable to either C, D or both. 
         return self.normalize().every(t => other.normalize().some(o => t.isAssignableTo(o))); 
     }
 }
@@ -200,7 +203,7 @@ export class BaseType extends DefinitionInstantiation {
     }
 
     public getBaseTypesAssignableTo(): BaseType[] {
-        return selectMany(this.getBaseTypesDirectlyAssignableTo(), t => {
+        return selectMany([ this as BaseType ].concat(this.getBaseTypesDirectlyAssignableTo()), t => {
             return [ t ].concat(t.getBaseTypesAssignableTo());
         });
     }
@@ -234,10 +237,10 @@ export class TypeParameter extends Type {
  * Example: insert(Dictionary<0, Producer<1|2>>, [string, meat, chocolate]) returns Dictionary<string, Producter<meat|chocolate>>. 
  */
 function insert(type: Type, args: Type[]): Type {
-    if (type.isBaseType())           return new BaseType(type.definition, insertMany(type.typeArgs, args));
-    if (type.isAliasInstantiation()) return new AliasInstantiation(type.definition, insertMany(type.typeArgs, args));
-    if (type.isUnionType())          return new UnionType(insert(type.type1, args), insert(type.type2, args));
-    if (type.isTypeParameter())       return (type.pos < args.length) ? args[type.pos] : type;
+    if (type instanceof BaseType)           return new BaseType(type.definition, insertMany(type.typeArgs, args));
+    if (type instanceof AliasInstantiation) return new AliasInstantiation(type.definition, insertMany(type.typeArgs, args));
+    if (type instanceof UnionType)          return new UnionType(insert(type.type1, args), insert(type.type2, args));
+    if (type instanceof TypeParameter)       return (type.pos < args.length) ? args[type.pos] : type;
     throw Error("Unknown type");
 }
 
@@ -249,9 +252,9 @@ function insertMany(types: Type[], args: Type[]): Type[] { return types.map(t =>
  * Example: getMaxArgPos(Dictionary<0, Producer<1>>) is 1.
 */
 function getMaxArgPos(type: Type): number {
-    if (type.isAliasInstantiation() || type.isBaseType() || type.isUnionType()) 
+    if (type instanceof AliasInstantiation || type instanceof BaseType || type instanceof UnionType) 
         return Math.max(-1, ...type.typeArgs.map(getMaxArgPos));
-    if (type.isTypeParameter())   return type.pos;
+    if (type instanceof TypeParameter)   return type.pos;
     throw Error("Unknown type");
 }
 
